@@ -17,7 +17,6 @@ interface Message {
 type Step =
   | "initial"
   | "awaiting_image"
-  | "awaiting_criteria"
   | "analyzing_image"
   | "showing_description"
   | "awaiting_social_media_confirmation";
@@ -26,8 +25,6 @@ export default function Home() {
   const [currentStep, setCurrentStep] = useState<Step>("initial");
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
-  const [uploadedImage, setUploadedImage] = useState<File | null>(null);
-  const [imageCriteria, setImageCriteria] = useState<string>("");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -71,77 +68,6 @@ export default function Home() {
 
     // Handle different steps
     switch (currentStep) {
-      case "awaiting_criteria":
-        setImageCriteria(input);
-        setMessages((prev) => [
-          ...prev,
-          {
-            content: "Analyzing your image with the provided criteria...",
-            type: "text",
-            role: "assistant",
-          },
-        ]);
-        setCurrentStep("analyzing_image");
-        const payload = {
-          criteria: input,
-          image: uploadedImage
-            ? Array.from(new Uint8Array(await uploadedImage.arrayBuffer()))
-            : null,
-        };
-
-        setIsAnalyzing(true);
-
-        try {
-          const response = await fetch(
-            "https://beyond-rag-api.thomas-development.workers.dev/image-description",
-            {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify(payload),
-            }
-          );
-
-          if (!response.ok) {
-            throw new Error("Failed to analyze image");
-          }
-
-          const data = await response.json();
-          setImageDescription(data.response);
-          setMessages((prev) => [
-            ...prev,
-            {
-              content:
-                "Based on your criteria, here's what I see in the image:\n\n" +
-                `${data.response}`,
-              type: "text",
-              role: "assistant",
-            },
-            {
-              content:
-                "Would you like me to generate social media posts based on this description? (Yes/No)",
-              type: "text",
-              role: "assistant",
-            },
-          ]);
-          setIsAnalyzing(false);
-
-          setCurrentStep("awaiting_social_media_confirmation");
-        } catch (error) {
-          setMessages((prev) => [
-            ...prev,
-            {
-              content:
-                "There was an error analyzing the image. Please try again.",
-              type: "text",
-              role: "assistant",
-            },
-          ]);
-          setCurrentStep("awaiting_criteria");
-        }
-        break;
-
       case "awaiting_social_media_confirmation":
         if (input.toLowerCase().includes("yes")) {
           try {
@@ -158,6 +84,7 @@ export default function Home() {
             }
 
             const data = await response.json();
+            console.log(data);
             setMessages((prev) => [
               ...prev,
               {
@@ -208,25 +135,16 @@ export default function Home() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    setUploadedImage(file);
-    const newMessage: Message = {
-      content: file,
-      type: "image",
-      role: "user",
-    };
-
     setMessages((prev) => [
       ...prev,
-      newMessage,
       {
-        content:
-          "Great! Now, what aspects of the image would you like me to focus on in my analysis? (e.g., 'colors and mood', 'objects and their arrangement', 'overall composition')",
-        type: "text",
-        role: "assistant",
+        content: file,
+        type: "image",
+        role: "user",
       },
     ]);
 
-    setCurrentStep("awaiting_criteria");
+    analyzeUploadedImage(file);
 
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
@@ -329,4 +247,69 @@ export default function Home() {
       </main>
     </div>
   );
+
+  async function analyzeUploadedImage(file: File) {
+    setMessages((prev) => [
+      ...prev,
+      {
+        content: "Analyzing your image...",
+        type: "text",
+        role: "assistant",
+      },
+    ]);
+    setCurrentStep("analyzing_image");
+    const payload = {
+      image: file
+        ? Array.from(new Uint8Array(await file.arrayBuffer()))
+        : null,
+    };
+
+    setIsAnalyzing(true);
+
+    try {
+      const response = await fetch(
+        "https://beyond-rag-api.thomas-development.workers.dev/image-description",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(payload),
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error("Failed to analyze image");
+      }
+
+      const data = await response.json();
+      setImageDescription(data.response);
+      setMessages((prev) => [
+        ...prev,
+        {
+          content: "Here's how I would describe the image:\n\n" +
+            `${data.response}`,
+          type: "text",
+          role: "assistant",
+        },
+        {
+          content: "Would you like me to generate social media posts based on this description? (Yes/No)",
+          type: "text",
+          role: "assistant",
+        },
+      ]);
+      setIsAnalyzing(false);
+
+      setCurrentStep("awaiting_social_media_confirmation");
+    } catch (error) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          content: "There was an error analyzing the image. Please try again.",
+          type: "text",
+          role: "assistant",
+        },
+      ]);
+    }
+  }
 }
