@@ -83,7 +83,7 @@ export default function Home() {
         ]);
         setCurrentStep("analyzing_image");
         const payload = {
-          criteria: imageCriteria,
+          criteria: input,
           image: uploadedImage
             ? Array.from(new Uint8Array(await uploadedImage.arrayBuffer()))
             : null,
