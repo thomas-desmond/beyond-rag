@@ -29,6 +29,15 @@ export default function Home() {
   const [uploadedImage, setUploadedImage] = useState<File | null>(null);
   const [imageCriteria, setImageCriteria] = useState<string>("");
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages]);
 
   useEffect(() => {
     // Set initial message based on current step
@@ -170,6 +179,7 @@ export default function Home() {
                 </div>
               </div>
             ))}
+            <div ref={messagesEndRef} />
           </div>
         </ScrollArea>
 
