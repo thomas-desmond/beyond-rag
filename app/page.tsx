@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { Send, ImagePlus } from "lucide-react";
+import { Send, ImagePlus, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -14,10 +14,10 @@ interface Message {
   role: "user" | "assistant";
 }
 
-type Step = 
-  | "initial" 
-  | "awaiting_image" 
-  | "awaiting_criteria" 
+type Step =
+  | "initial"
+  | "awaiting_image"
+  | "awaiting_criteria"
   | "analyzing_image"
   | "showing_description"
   | "awaiting_social_media_confirmation";
@@ -30,6 +30,9 @@ export default function Home() {
   const [imageCriteria, setImageCriteria] = useState<string>("");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [imageDescription, setImageDescription] = useState("");
+
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -42,11 +45,14 @@ export default function Home() {
   useEffect(() => {
     // Set initial message based on current step
     if (messages.length === 0) {
-      setMessages([{
-        content: "Welcome! Let's start by uploading an image you'd like me to analyze.",
-        type: "text",
-        role: "assistant"
-      }]);
+      setMessages([
+        {
+          content:
+            "Welcome! Let's start by uploading an image you'd like me to analyze.",
+          type: "text",
+          role: "assistant",
+        },
+      ]);
       setCurrentStep("awaiting_image");
     }
   }, []);
@@ -60,49 +66,138 @@ export default function Home() {
       type: "text",
       role: "user",
     };
-    setMessages(prev => [...prev, userMessage]);
+    setMessages((prev) => [...prev, userMessage]);
     setInput("");
 
     // Handle different steps
     switch (currentStep) {
       case "awaiting_criteria":
         setImageCriteria(input);
-        setMessages(prev => [...prev, {
-          content: "Analyzing your image with the provided criteria...",
-          type: "text",
-          role: "assistant"
-        }]);
+        setMessages((prev) => [
+          ...prev,
+          {
+            content: "Analyzing your image with the provided criteria...",
+            type: "text",
+            role: "assistant",
+          },
+        ]);
         setCurrentStep("analyzing_image");
-        // Here you would call your API to analyze the image
-        // For now, we'll simulate it
-        setTimeout(() => {
-          setMessages(prev => [...prev, {
-            content: "Based on your criteria, here's what I see in the image: [AI Description would go here]",
-            type: "text",
-            role: "assistant"
-          }, {
-            content: "Would you like me to generate social media posts based on this description? (Yes/No)",
-            type: "text",
-            role: "assistant"
-          }]);
+        const payload = {
+          criteria: imageCriteria,
+          image: uploadedImage
+            ? Array.from(new Uint8Array(await uploadedImage.arrayBuffer()))
+            : null,
+        };
+
+        setIsAnalyzing(true);
+
+        try {
+          const response = await fetch(
+            "https://beyond-rag-api.thomas-development.workers.dev/image-description",
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify(payload),
+            }
+          );
+
+          if (!response.ok) {
+            throw new Error("Failed to analyze image");
+          }
+
+          const data = await response.json();
+          setImageDescription(data.response);
+          setMessages((prev) => [
+            ...prev,
+            {
+              content:
+                "Based on your criteria, here's what I see in the image:\n\n" +
+                `${data.response}`,
+              type: "text",
+              role: "assistant",
+            },
+            {
+              content:
+                "Would you like me to generate social media posts based on this description? (Yes/No)",
+              type: "text",
+              role: "assistant",
+            },
+          ]);
+          setIsAnalyzing(false);
+
           setCurrentStep("awaiting_social_media_confirmation");
-        }, 2000);
+        } catch (error) {
+          setMessages((prev) => [
+            ...prev,
+            {
+              content:
+                "There was an error analyzing the image. Please try again.",
+              type: "text",
+              role: "assistant",
+            },
+          ]);
+          setCurrentStep("awaiting_criteria");
+        }
         break;
 
       case "awaiting_social_media_confirmation":
         if (input.toLowerCase().includes("yes")) {
-          setMessages(prev => [...prev, {
-            content: "Great! Here are some suggested social media posts: [Generated posts would go here]",
-            type: "text",
-            role: "assistant"
-          }]);
-          setCurrentStep("initial");
+          try {
+            const response = await fetch("https://beyond-rag-api.thomas-development.workers.dev/social-posts", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({ description: imageDescription }),
+            });
+
+            if (!response.ok) {
+              throw new Error("Failed to generate social media posts");
+            }
+
+            const data = await response.json();
+            setMessages((prev) => [
+              ...prev,
+              {
+                content: `Here are some suggested social media posts:\n\n${data.response}`,
+                type: "text",
+                role: "assistant",
+              },
+            ]);
+            setMessages((prev) => [
+              ...prev,
+              {
+                content: `I'm ready for another image`,
+                type: "text",
+                role: "assistant",
+              },
+            ]);
+            setCurrentStep("awaiting_image");
+
+          } catch (error) {
+            setMessages((prev) => [
+              ...prev,
+              {
+                content: "There was an error generating social media posts. Please try again.",
+                type: "text",
+                role: "assistant",
+              },
+            ]);
+            setCurrentStep("initial");
+          }
+          break;         
         } else {
-          setMessages(prev => [...prev, {
-            content: "No problem! Let me know if you'd like to analyze another image.",
-            type: "text",
-            role: "assistant"
-          }]);
+          setMessages((prev) => [
+            ...prev,
+            {
+              content:
+                "No problem! Let me know if you'd like to analyze another image.",
+              type: "text",
+              role: "assistant",
+            },
+          ]);
           setCurrentStep("awaiting_image");
         }
         break;
@@ -120,12 +215,17 @@ export default function Home() {
       role: "user",
     };
 
-    setMessages(prev => [...prev, newMessage, {
-      content: "Great! Now, what aspects of the image would you like me to focus on in my analysis? (e.g., 'colors and mood', 'objects and their arrangement', 'overall composition')",
-      type: "text",
-      role: "assistant"
-    }]);
-    
+    setMessages((prev) => [
+      ...prev,
+      newMessage,
+      {
+        content:
+          "Great! Now, what aspects of the image would you like me to focus on in my analysis? (e.g., 'colors and mood', 'objects and their arrangement', 'overall composition')",
+        type: "text",
+        role: "assistant",
+      },
+    ]);
+
     setCurrentStep("awaiting_criteria");
 
     if (fileInputRef.current) {
@@ -141,7 +241,15 @@ export default function Home() {
       <header className="bg-white border-b border-gray-200 px-4 py-3">
         <div className="max-w-3xl mx-auto flex items-center space-x-2">
           <div className="w-3 h-3 bg-[#f48120] rounded-full" />
-          <h1 className="text-lg font-semibold text-gray-900">Cloudflare AI Chat</h1>
+          <h1 className="text-lg font-semibold text-gray-900">
+            Cloudflare AI Chat
+          </h1>
+          {isAnalyzing && (
+            <div className="flex items-center space-x-2 ml-auto">
+              <Loader2 className="h-4 w-4 animate-spin text-[#f48120]" />
+              <span className="text-sm text-gray-500">Generating...</span>
+            </div>
+          )}
         </div>
       </header>
 
@@ -165,7 +273,7 @@ export default function Home() {
                   )}
                 >
                   {message.type === "text" ? (
-                    <p className="break-words">{message.content as string}</p>
+                    <p className="break-words whitespace-pre-line">{message.content as string}</p>
                   ) : (
                     <div className="relative w-64 h-64">
                       <Image
@@ -204,11 +312,17 @@ export default function Home() {
           <Input
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder={isInputDisabled ? "Processing..." : "Type your message..."}
+            placeholder={
+              isInputDisabled ? "Processing..." : "Type your message..."
+            }
             className="flex-1"
             disabled={isInputDisabled}
           />
-          <Button type="submit" size="icon" disabled={isInputDisabled || !input.trim()}>
+          <Button
+            type="submit"
+            size="icon"
+            disabled={isInputDisabled || !input.trim()}
+          >
             <Send className="h-4 w-4" />
           </Button>
         </form>
