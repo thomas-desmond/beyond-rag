@@ -5,6 +5,9 @@ import { Send, ImagePlus, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { LanguageSelector } from "@/components/ui/language-selector";
+import { useTranslation } from "@/lib/i18n-context";
+import { TranslationKey } from "@/lib/translations";
 import { cn } from "@/lib/utils";
 import Image from "next/image";
 
@@ -12,6 +15,8 @@ interface Message {
   content: string | File;
   type: "text" | "image";
   role: "user" | "assistant";
+  translationKey?: TranslationKey; // For system messages that need translation
+  dynamicContent?: string; // For API responses that should be preserved
 }
 
 type Step =
@@ -22,6 +27,7 @@ type Step =
   | "awaiting_social_media_confirmation";
 
 export default function Home() {
+  const { t } = useTranslation();
   const [currentStep, setCurrentStep] = useState<Step>("initial");
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
@@ -35,6 +41,73 @@ export default function Home() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
+  const handleSocialMediaChoice = async (choice: 'yes' | 'no') => {
+    const userMessage: Message = {
+      content: choice === 'yes' ? t('yesButton') : t('noButton'),
+      type: "text",
+      role: "user",
+    };
+    setMessages((prev) => [...prev, userMessage]);
+
+    if (choice === 'yes') {
+      try {
+        const response = await fetch("https://beyond-rag-api.thomas-development.workers.dev/social-posts", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ description: imageDescription }),
+        });
+
+        if (!response.ok) {
+          throw new Error(t('apiError'));
+        }
+
+        const data = await response.json();
+        setMessages((prev) => [
+          ...prev,
+          {
+            content: "",
+            translationKey: "socialMediaPostsPrefix",
+            dynamicContent: data.response,
+            type: "text",
+            role: "assistant",
+          },
+          {
+            content: "",
+            translationKey: "readyForAnother",
+            type: "text",
+            role: "assistant",
+          },
+        ]);
+        setCurrentStep("awaiting_image");
+
+      } catch (error) {
+        setMessages((prev) => [
+          ...prev,
+          {
+            content: "",
+            translationKey: "socialMediaError",
+            type: "text",
+            role: "assistant",
+          },
+        ]);
+        setCurrentStep("initial");
+      }
+    } else {
+      setMessages((prev) => [
+        ...prev,
+        {
+          content: "",
+          translationKey: "noProblemMessage",
+          type: "text",
+          role: "assistant",
+        },
+      ]);
+      setCurrentStep("awaiting_image");
+    }
+  };
+
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
@@ -44,15 +117,15 @@ export default function Home() {
     if (messages.length === 0) {
       setMessages([
         {
-          content:
-            "Welcome! Let's start by uploading an image you'd like me to analyze.",
+          content: "",
           type: "text",
           role: "assistant",
+          translationKey: "welcomeMessage",
         },
       ]);
       setCurrentStep("awaiting_image");
     }
-  }, []);
+  }, [messages.length]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -66,69 +139,8 @@ export default function Home() {
     setMessages((prev) => [...prev, userMessage]);
     setInput("");
 
-    // Handle different steps
-    switch (currentStep) {
-      case "awaiting_social_media_confirmation":
-        if (input.toLowerCase().includes("yes")) {
-          try {
-            const response = await fetch("https://beyond-rag-api.thomas-development.workers.dev/social-posts", {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({ description: imageDescription }),
-            });
-
-            if (!response.ok) {
-              throw new Error("Failed to generate social media posts");
-            }
-
-            const data = await response.json();
-            console.log(data);
-            setMessages((prev) => [
-              ...prev,
-              {
-                content: `Here are some suggested social media posts:\n\n${data.response}`,
-                type: "text",
-                role: "assistant",
-              },
-            ]);
-            setMessages((prev) => [
-              ...prev,
-              {
-                content: `I'm ready for another image`,
-                type: "text",
-                role: "assistant",
-              },
-            ]);
-            setCurrentStep("awaiting_image");
-
-          } catch (error) {
-            setMessages((prev) => [
-              ...prev,
-              {
-                content: "There was an error generating social media posts. Please try again.",
-                type: "text",
-                role: "assistant",
-              },
-            ]);
-            setCurrentStep("initial");
-          }
-          break;         
-        } else {
-          setMessages((prev) => [
-            ...prev,
-            {
-              content:
-                "No problem! Let me know if you'd like to analyze another image.",
-              type: "text",
-              role: "assistant",
-            },
-          ]);
-          setCurrentStep("awaiting_image");
-        }
-        break;
-    }
+    // Handle different steps - social media confirmation now handled by buttons
+    // No text input handling needed for social media confirmation
   };
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -157,17 +169,20 @@ export default function Home() {
   return (
     <div className="flex flex-col h-screen bg-[#f6f6f7]">
       <header className="bg-white border-b border-gray-200 px-4 py-3">
-        <div className="max-w-3xl mx-auto flex items-center space-x-2">
-          <div className="w-3 h-3 bg-[#f48120] rounded-full" />
-          <h1 className="text-lg font-semibold text-gray-900">
-            Cloudflare AI Chat
-          </h1>
-          {isAnalyzing && (
-            <div className="flex items-center space-x-2 ml-auto">
-              <Loader2 className="h-4 w-4 animate-spin text-[#f48120]" />
-              <span className="text-sm text-gray-500">Generating...</span>
-            </div>
-          )}
+        <div className="max-w-3xl mx-auto flex items-center justify-between">
+          <div className="flex items-center space-x-2">
+            <div className="w-3 h-3 bg-[#f48120] rounded-full" />
+            <h1 className="text-lg font-semibold text-gray-900">
+              {t('appTitle')}
+            </h1>
+            {isAnalyzing && (
+              <div className="flex items-center space-x-2 ml-4">
+                <Loader2 className="h-4 w-4 animate-spin text-[#f48120]" />
+                <span className="text-sm text-gray-500">{t('generating')}</span>
+              </div>
+            )}
+          </div>
+          <LanguageSelector />
         </div>
       </header>
 
@@ -191,12 +206,19 @@ export default function Home() {
                   )}
                 >
                   {message.type === "text" ? (
-                    <p className="break-words whitespace-pre-line">{message.content as string}</p>
+                    <p className="break-words whitespace-pre-line">
+                      {message.translationKey 
+                        ? message.dynamicContent 
+                          ? `${t(message.translationKey)}:\n\n${message.dynamicContent}`
+                          : t(message.translationKey)
+                        : message.content as string
+                      }
+                    </p>
                   ) : (
                     <div className="relative w-64 h-64">
                       <Image
                         src={URL.createObjectURL(message.content as File)}
-                        alt="Uploaded image"
+                        alt={t('uploadedImageAlt')}
                         fill
                         className="object-contain rounded"
                       />
@@ -208,6 +230,24 @@ export default function Home() {
             <div ref={messagesEndRef} />
           </div>
         </ScrollArea>
+
+{currentStep === "awaiting_social_media_confirmation" && (
+          <div className="mt-4 flex gap-2 justify-center">
+            <Button
+              onClick={() => handleSocialMediaChoice('yes')}
+              className="bg-[#f48120] hover:bg-[#e6730e] text-white px-6 py-2"
+            >
+              {t('yesButton')}
+            </Button>
+            <Button
+              onClick={() => handleSocialMediaChoice('no')}
+              variant="outline"
+              className="px-6 py-2"
+            >
+              {t('noButton')}
+            </Button>
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} className="mt-4 flex gap-2">
           <input
@@ -231,15 +271,15 @@ export default function Home() {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             placeholder={
-              isInputDisabled ? "Processing..." : "Type your message..."
+              isInputDisabled ? t('processingPlaceholder') : t('messagePlaceholder')
             }
             className="flex-1"
-            disabled={isInputDisabled}
+            disabled={isInputDisabled || currentStep === "awaiting_social_media_confirmation"}
           />
           <Button
             type="submit"
             size="icon"
-            disabled={isInputDisabled || !input.trim()}
+            disabled={isInputDisabled || !input.trim() || currentStep === "awaiting_social_media_confirmation"}
           >
             <Send className="h-4 w-4" />
           </Button>
@@ -252,7 +292,8 @@ export default function Home() {
     setMessages((prev) => [
       ...prev,
       {
-        content: "Analyzing your image...",
+        content: "",
+        translationKey: "analyzingMessage",
         type: "text",
         role: "assistant",
       },
@@ -279,7 +320,7 @@ export default function Home() {
       );
 
       if (!response.ok) {
-        throw new Error("Failed to analyze image");
+        throw new Error(t('imageApiError'));
       }
 
       const data = await response.json();
@@ -287,13 +328,15 @@ export default function Home() {
       setMessages((prev) => [
         ...prev,
         {
-          content: "Here's how I would describe the image:\n\n" +
-            `${data.response}`,
+          content: "",
+          translationKey: "imageDescriptionPrefix",
+          dynamicContent: data.response,
           type: "text",
           role: "assistant",
         },
         {
-          content: "Would you like me to generate social media posts based on this description? (Yes/No)",
+          content: "",
+          translationKey: "socialMediaQuestion",
           type: "text",
           role: "assistant",
         },
@@ -305,7 +348,8 @@ export default function Home() {
       setMessages((prev) => [
         ...prev,
         {
-          content: "There was an error analyzing the image. Please try again.",
+          content: "",
+          translationKey: "imageAnalysisError",
           type: "text",
           role: "assistant",
         },
