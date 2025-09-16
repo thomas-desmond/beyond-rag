@@ -27,7 +27,7 @@ type Step =
   | "awaiting_social_media_confirmation";
 
 export default function Home() {
-  const { t } = useTranslation();
+  const { t, language } = useTranslation();
   const [currentStep, setCurrentStep] = useState<Step>("initial");
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
@@ -55,6 +55,7 @@ export default function Home() {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
+            "Accept-Language": language,
           },
           body: JSON.stringify({ description: imageDescription }),
         });
@@ -314,6 +315,7 @@ export default function Home() {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
+            "Accept-Language": language,
           },
           body: JSON.stringify(payload),
         }
