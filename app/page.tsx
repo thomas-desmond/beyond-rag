@@ -51,7 +51,7 @@ export default function Home() {
 
     if (choice === 'yes') {
       try {
-        const response = await fetch("https://beyond-rag-api.thomas-development.workers.dev/social-posts", {
+        const response = await fetch("https://beyond-rag-api.cf-tme.workers.dev/social-posts", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -310,7 +310,7 @@ export default function Home() {
 
     try {
       const response = await fetch(
-        "https://beyond-rag-api.thomas-development.workers.dev/image-description",
+        "https://beyond-rag-api.cf-tme.workers.dev/image-description",
         {
           method: "POST",
           headers: {
